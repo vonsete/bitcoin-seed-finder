@@ -1,0 +1,3 @@
+mnemonic==0.20
+hdwallet==2.2.1
+requests==2.31.0

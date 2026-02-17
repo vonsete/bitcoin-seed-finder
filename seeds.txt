@@ -1,0 +1,3 @@
+# Archivo de ejemplo - cada línea debe tener 11 palabras BIP39
+# Reemplaza estas líneas con tus propias palabras
+# abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon
