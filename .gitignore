@@ -14,6 +14,13 @@ test_output.txt
 optimized_test.txt
 *.log
 
+# Test files and outputs
+test_*.txt
+prueba*.txt
+mi_prueba.txt
+resultado*.txt
+salida*.log
+
 # IDE
 .vscode/
 .idea/
@@ -23,6 +30,3 @@ optimized_test.txt
 # OS
 .DS_Store
 Thumbs.db
-
-# Local test files
-test_seeds.txt
