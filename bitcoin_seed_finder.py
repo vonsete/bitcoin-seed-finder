@@ -110,42 +110,47 @@ def generate_addresses(seed_phrase):
 def check_balance_blockchain_info(address):
     """
     Check Bitcoin balance using blockchain.info API
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     try:
-        url = f"https://blockchain.info/q/addressbalance/{address}"
+        # Get balance and transaction count using the full address endpoint
+        url = f"https://blockchain.info/rawaddr/{address}?limit=0"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            satoshis = int(response.text)
+            data = response.json()
+            satoshis = data.get('final_balance', 0)
+            tx_count = data.get('n_tx', 0)
             btc = satoshis / 100000000
-            return btc, "blockchain.info"
+            return btc, tx_count, "blockchain.info"
         else:
-            return None, None
+            return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def check_balance_blockchair(address):
     """
     Check balance using Blockchair API
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     try:
         url = f"https://api.blockchair.com/bitcoin/dashboards/address/{address}"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            balance = data['data'][address]['address']['balance']
+            address_data = data['data'][address]['address']
+            balance = address_data['balance']
+            tx_count = address_data.get('transaction_count', 0)
             btc = balance / 100000000
-            return btc, "blockchair.com"
+            return btc, tx_count, "blockchair.com"
         else:
-            return None, None
+            return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def check_balance_blockcypher(address):
     """
     Check balance using BlockCypher API
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     try:
         url = f"https://api.blockcypher.com/v1/btc/main/addrs/{address}/balance"
@@ -153,58 +158,63 @@ def check_balance_blockcypher(address):
         if response.status_code == 200:
             data = response.json()
             satoshis = data.get('final_balance', 0)
+            tx_count = data.get('n_tx', 0)
             btc = satoshis / 100000000
-            return btc, "blockcypher.com"
+            return btc, tx_count, "blockcypher.com"
         else:
-            return None, None
+            return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def check_balance_blockstream(address):
     """
     Check balance using Blockstream API
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     try:
         url = f"https://blockstream.info/api/address/{address}"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            funded = data.get('chain_stats', {}).get('funded_txo_sum', 0)
-            spent = data.get('chain_stats', {}).get('spent_txo_sum', 0)
+            chain_stats = data.get('chain_stats', {})
+            funded = chain_stats.get('funded_txo_sum', 0)
+            spent = chain_stats.get('spent_txo_sum', 0)
+            tx_count = chain_stats.get('tx_count', 0)
             satoshis = funded - spent
             btc = satoshis / 100000000
-            return btc, "blockstream.info"
+            return btc, tx_count, "blockstream.info"
         else:
-            return None, None
+            return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def check_balance_mempool_space(address):
     """
     Check balance using Mempool.space API
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     try:
         url = f"https://mempool.space/api/address/{address}"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            funded = data.get('chain_stats', {}).get('funded_txo_sum', 0)
-            spent = data.get('chain_stats', {}).get('spent_txo_sum', 0)
+            chain_stats = data.get('chain_stats', {})
+            funded = chain_stats.get('funded_txo_sum', 0)
+            spent = chain_stats.get('spent_txo_sum', 0)
+            tx_count = chain_stats.get('tx_count', 0)
             satoshis = funded - spent
             btc = satoshis / 100000000
-            return btc, "mempool.space"
+            return btc, tx_count, "mempool.space"
         else:
-            return None, None
+            return None, None, None
     except Exception as e:
-        return None, None
+        return None, None, None
 
 def check_balance_with_fallback(address):
     """
     Check Bitcoin balance with automatic fallback to multiple APIs
     Tries multiple services in order until one succeeds
-    Returns (balance_in_btc, api_name) or (None, None)
+    Returns (balance_in_btc, tx_count, api_name) or (None, None, None)
     """
     # List of API functions to try in order
     api_providers = [
@@ -216,13 +226,13 @@ def check_balance_with_fallback(address):
     ]
 
     for api_func in api_providers:
-        balance, api_name = api_func(address)
+        balance, tx_count, api_name = api_func(address)
         if balance is not None:
-            return balance, api_name
+            return balance, tx_count, api_name
         # Small delay before trying next API
         time.sleep(0.5)
 
-    return None, None
+    return None, None, None
 
 def process_file(filename):
     """
@@ -273,10 +283,12 @@ def process_file(filename):
 
             # Check balances
             found_balance = False
+            found_activity = False  # Track if wallet has any transactions
             wallet_info = {
                 'seed': seed,
                 'addresses': {},
-                'total_balance': 0
+                'total_balance': 0,
+                'total_transactions': 0
             }
 
             for addr_type, address in addresses.items():
@@ -287,27 +299,37 @@ def process_file(filename):
                     output_file.flush()
 
                 # Try all APIs with automatic fallback
-                balance, api_name = check_balance_with_fallback(address)
+                balance, tx_count, api_name = check_balance_with_fallback(address)
 
                 if balance is not None:
                     wallet_info['addresses'][addr_type] = {
                         'address': address,
-                        'balance': balance
+                        'balance': balance,
+                        'tx_count': tx_count
                     }
+                    wallet_info['total_transactions'] += tx_count
+
                     if balance > 0:
-                        result_msg = f"💰 BALANCE: {balance:.8f} BTC [via {api_name}]"
+                        result_msg = f"💰 BALANCE: {balance:.8f} BTC | TXs: {tx_count} [via {api_name}]"
                         log_print(result_msg, console=True, file_only=False)
                         found_balance = True
                         wallet_info['total_balance'] += balance
+                    elif tx_count > 0:
+                        result_msg = f"Balance: 0 BTC | 📊 TXs: {tx_count} (USED WALLET!) [via {api_name}]"
+                        log_print(result_msg, console=True, file_only=False)
+                        found_activity = True
                     else:
-                        log_print(f"Balance: 0 BTC [via {api_name}]")
+                        log_print(f"Balance: 0 BTC | TXs: 0 [via {api_name}]")
                 else:
                     log_print("Balance: Unable to check (all APIs failed)")
 
                 time.sleep(1.0)  # Delay between addresses
 
-            if found_balance:
-                log_print("\n  ⚠️  WALLET WITH BALANCE FOUND! ⚠️")
+            if found_balance or found_activity:
+                if found_balance:
+                    log_print("\n  ⚠️  WALLET WITH BALANCE FOUND! ⚠️")
+                elif found_activity:
+                    log_print("\n  📊 WALLET WITH TRANSACTION HISTORY FOUND! 📊")
                 wallets_with_balance.append(wallet_info)
 
         log_print("=" * 80)
@@ -315,14 +337,16 @@ def process_file(filename):
     # Summary at the end
     if wallets_with_balance:
         log_print("\n" + "=" * 80)
-        log_print("SUMMARY - WALLETS WITH BALANCE FOUND:")
+        log_print("SUMMARY - WALLETS WITH BALANCE OR ACTIVITY FOUND:")
         log_print("=" * 80)
         for idx, wallet in enumerate(wallets_with_balance, 1):
             log_print(f"\n[{idx}] Seed: {wallet['seed']}")
             log_print(f"    Total Balance: {wallet['total_balance']:.8f} BTC")
+            log_print(f"    Total Transactions: {wallet['total_transactions']}")
             for addr_type, info in wallet['addresses'].items():
-                if info['balance'] > 0:
-                    log_print(f"    {addr_type:15} : {info['address']} = {info['balance']:.8f} BTC")
+                if info['balance'] > 0 or info['tx_count'] > 0:
+                    log_print(f"    {addr_type:15} : {info['address']}")
+                    log_print(f"                      Balance: {info['balance']:.8f} BTC | Transactions: {info['tx_count']}")
         log_print("=" * 80)
 
 def main():
