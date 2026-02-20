@@ -107,26 +107,27 @@ def generate_addresses(seed_phrase):
 
     return addresses
 
-def check_balance(address):
+def check_balance_blockchain_info(address):
     """
-    Check Bitcoin balance for an address using blockchain.info API
-    Returns balance in BTC
+    Check Bitcoin balance using blockchain.info API
+    Returns (balance_in_btc, api_name) or (None, None)
     """
     try:
         url = f"https://blockchain.info/q/addressbalance/{address}"
-        response = requests.get(url, timeout=1000)
+        response = requests.get(url, timeout=10)
         if response.status_code == 200:
             satoshis = int(response.text)
             btc = satoshis / 100000000
-            return btc
+            return btc, "blockchain.info"
         else:
-            return None
+            return None, None
     except Exception as e:
-        return None
+        return None, None
 
 def check_balance_blockchair(address):
     """
-    Alternative: Check balance using Blockchair API
+    Check balance using Blockchair API
+    Returns (balance_in_btc, api_name) or (None, None)
     """
     try:
         url = f"https://api.blockchair.com/bitcoin/dashboards/address/{address}"
@@ -135,11 +136,93 @@ def check_balance_blockchair(address):
             data = response.json()
             balance = data['data'][address]['address']['balance']
             btc = balance / 100000000
-            return btc
+            return btc, "blockchair.com"
         else:
-            return None
+            return None, None
     except Exception as e:
-        return None
+        return None, None
+
+def check_balance_blockcypher(address):
+    """
+    Check balance using BlockCypher API
+    Returns (balance_in_btc, api_name) or (None, None)
+    """
+    try:
+        url = f"https://api.blockcypher.com/v1/btc/main/addrs/{address}/balance"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            satoshis = data.get('final_balance', 0)
+            btc = satoshis / 100000000
+            return btc, "blockcypher.com"
+        else:
+            return None, None
+    except Exception as e:
+        return None, None
+
+def check_balance_blockstream(address):
+    """
+    Check balance using Blockstream API
+    Returns (balance_in_btc, api_name) or (None, None)
+    """
+    try:
+        url = f"https://blockstream.info/api/address/{address}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            funded = data.get('chain_stats', {}).get('funded_txo_sum', 0)
+            spent = data.get('chain_stats', {}).get('spent_txo_sum', 0)
+            satoshis = funded - spent
+            btc = satoshis / 100000000
+            return btc, "blockstream.info"
+        else:
+            return None, None
+    except Exception as e:
+        return None, None
+
+def check_balance_mempool_space(address):
+    """
+    Check balance using Mempool.space API
+    Returns (balance_in_btc, api_name) or (None, None)
+    """
+    try:
+        url = f"https://mempool.space/api/address/{address}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            funded = data.get('chain_stats', {}).get('funded_txo_sum', 0)
+            spent = data.get('chain_stats', {}).get('spent_txo_sum', 0)
+            satoshis = funded - spent
+            btc = satoshis / 100000000
+            return btc, "mempool.space"
+        else:
+            return None, None
+    except Exception as e:
+        return None, None
+
+def check_balance_with_fallback(address):
+    """
+    Check Bitcoin balance with automatic fallback to multiple APIs
+    Tries multiple services in order until one succeeds
+    Returns (balance_in_btc, api_name) or (None, None)
+    """
+    # List of API functions to try in order
+    api_providers = [
+        check_balance_blockchain_info,
+        check_balance_blockstream,
+        check_balance_mempool_space,
+        check_balance_blockcypher,
+        check_balance_blockchair,
+    ]
+
+    for api_func in api_providers:
+        balance, api_name = api_func(address)
+        if balance is not None:
+            return balance, api_name
+        # Small delay before trying next API
+        time.sleep(0.5)
+
+    return None, None
 
 def process_file(filename):
     """
@@ -203,13 +286,8 @@ def process_file(filename):
                     output_file.write(msg)
                     output_file.flush()
 
-                # Try blockchain.info first
-                balance = check_balance(address)
-
-                # If failed, try blockchair
-                if balance is None:
-                    time.sleep(2.0)  # Increased delay
-                    balance = check_balance_blockchair(address)
+                # Try all APIs with automatic fallback
+                balance, api_name = check_balance_with_fallback(address)
 
                 if balance is not None:
                     wallet_info['addresses'][addr_type] = {
@@ -217,16 +295,16 @@ def process_file(filename):
                         'balance': balance
                     }
                     if balance > 0:
-                        result_msg = f"💰 BALANCE: {balance:.8f} BTC"
+                        result_msg = f"💰 BALANCE: {balance:.8f} BTC [via {api_name}]"
                         log_print(result_msg, console=True, file_only=False)
                         found_balance = True
                         wallet_info['total_balance'] += balance
                     else:
-                        log_print(f"Balance: 0 BTC")
+                        log_print(f"Balance: 0 BTC [via {api_name}]")
                 else:
-                    log_print("Balance: Unable to check")
+                    log_print("Balance: Unable to check (all APIs failed)")
 
-                time.sleep(1.5)  # Increased delay between requests
+                time.sleep(1.0)  # Delay between addresses
 
             if found_balance:
                 log_print("\n  ⚠️  WALLET WITH BALANCE FOUND! ⚠️")
