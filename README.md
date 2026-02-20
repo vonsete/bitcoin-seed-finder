@@ -1,6 +1,6 @@
 # Bitcoin Seed Finder 🔍
 
-A Python tool to recover Bitcoin wallets from incomplete 12-word BIP39 seed phrases. Given the first 11 words, it calculates all valid 12th words based on the BIP39 checksum and checks their balances.
+A Python tool to recover Bitcoin wallets from incomplete or complete BIP39 seed phrases. It supports both 11-word seeds (generates all valid 12th words) and 12-word seeds (validates and checks specific wallet), with advanced balance and transaction history checking.
 
 ## ⚠️ Important - Ethical Use Only
 
@@ -18,13 +18,19 @@ Unauthorized access to cryptocurrency wallets is illegal in most jurisdictions.
 
 ## 🚀 Features
 
-- ✅ **Optimized BIP39 Checksum Calculation**: Directly calculates only the 128 valid 12th words (46x faster than brute force)
+- ✅ **Dual Mode Support**:
+  - **11 words**: Generates all 128 valid 12th words (46x faster than brute force)
+  - **12 words**: Validates seed checksum and checks specific wallet
 - ✅ **Multiple Address Types**: Generates Legacy (P2PKH), SegWit (P2WPKH-in-P2SH), and Native SegWit (P2WPKH) addresses
-- ✅ **Balance Checking**: Queries public APIs (blockchain.info and Blockchair) to check balances
+- ✅ **Advanced Balance Checking**:
+  - Multi-API fallback system (5 providers)
+  - Transaction count tracking
+  - Identifies wallets with past activity (even if balance is 0)
+- ✅ **Resilient API System**: Automatic fallback between blockchain.info, blockstream.info, mempool.space, blockcypher.com, and blockchair.com
+- ✅ **Transaction History**: Shows number of transactions for each address
 - ✅ **Automatic Result Saving**: Saves all results to a timestamped file
-- ✅ **Rate Limiting**: Includes delays to respect API rate limits
-- ✅ **Batch Processing**: Process multiple 11-word seeds from a single file
-- ✅ **Summary Report**: Shows all wallets with balance at the end
+- ✅ **Batch Processing**: Process multiple seeds from a single file (mix 11 and 12-word seeds)
+- ✅ **Smart Detection**: Highlights wallets with transaction history even if current balance is zero
 
 ## 📋 Requirements
 
@@ -46,13 +52,17 @@ pip install -r requirements.txt
 
 ### 1. Create Input File
 
-Create a text file (e.g., `seeds.txt`) with one 11-word seed per line:
+Create a text file (e.g., `seeds.txt`). You can mix both 11-word and 12-word seeds:
 
 ```text
-# My incomplete seeds
+# MODE 1: Incomplete seeds (11 words) - generates all valid 12th words
 abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon
-word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11
-# Lines starting with # are ignored
+
+# MODE 2: Complete seeds (12 words) - validates and checks specific wallet
+abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+
+# You can mix both types in the same file
+# Lines starting with # are comments and will be ignored
 ```
 
 ### 2. Run the Script
@@ -67,24 +77,47 @@ python3 bitcoin_seed_finder.py seeds.txt my_results.txt
 
 ### 3. Check Results
 
-The script will:
-- Calculate all 128 valid 12th words for each input
+**For 11-word seeds**, the script will:
+- Calculate all 128 valid 12th words
+- Check each resulting wallet (384 addresses total)
+
+**For 12-word seeds**, the script will:
+- Validate the seed checksum
+- If valid, check only that specific wallet (3 addresses)
+- If invalid, skip with error message
+
+**For all wallets**, it will:
 - Generate Bitcoin addresses (Legacy, SegWit, Native SegWit)
-- Check balances for each address
+- Check balances and transaction counts
+- Identify wallets with past activity
 - Save all results to file
-- Display summary of wallets with balance
+- Display summary of wallets with balance or transaction history
 
 ## 📊 Example Output
 
+### 11-word seed (generates all possibilities):
 ```
 [Line 1/1] Processing: abandon abandon abandon abandon...
 Found 128 valid seed phrase(s)
 
   [1] 12th word: 'about'
   Full seed: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
-    legacy          : 1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA ... Balance: 0 BTC
-    segwit          : 37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf ... Balance: 0 BTC
-    native_segwit   : bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu ... Balance: 0 BTC
+    legacy          : 1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA ... Balance: 0 BTC | 📊 TXs: 46 (USED WALLET!) [via blockstream.info]
+    segwit          : 37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf ... Balance: 0 BTC | 📊 TXs: 24 (USED WALLET!) [via blockstream.info]
+    native_segwit   : bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu ... Balance: 0 BTC | 📊 TXs: 170 (USED WALLET!) [via blockstream.info]
+
+  📊 WALLET WITH TRANSACTION HISTORY FOUND! 📊
+```
+
+### 12-word seed (validates and checks specific wallet):
+```
+[Line 1/1] Processing: abandon abandon abandon abandon...
+✅ Valid 12-word seed phrase detected
+
+  Full seed: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+    legacy          : 1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA ... Balance: 0 BTC | 📊 TXs: 46 (USED WALLET!) [via blockstream.info]
+    segwit          : 37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf ... Balance: 0 BTC | 📊 TXs: 24 (USED WALLET!) [via blockstream.info]
+    native_segwit   : bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu ... Balance: 0 BTC | 📊 TXs: 170 (USED WALLET!) [via blockstream.info]
 ```
 
 ## 🔬 How It Works
@@ -110,10 +143,16 @@ Uses standard BIP32/BIP44 derivation paths:
 
 ## 🛡️ Security & Privacy
 
-- **API Rate Limiting**: 1.5-2 second delays between requests
-- **Public APIs Only**: Uses blockchain.info and Blockchair public endpoints
+- **API Rate Limiting**: 1 second delay between addresses
+- **Multi-API Fallback**: Automatic failover across 5 public APIs:
+  1. blockchain.info
+  2. blockstream.info
+  3. mempool.space
+  4. blockcypher.com
+  5. blockchair.com
 - **No Private Keys Stored**: Script never saves private keys to disk
-- **Local Processing**: All seed generation happens locally
+- **Local Processing**: All seed generation and validation happens locally
+- **Resilient**: Continues working even when individual APIs are down or rate-limited
 
 ## ⚙️ Technical Details
 

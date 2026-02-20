@@ -252,27 +252,41 @@ def process_file(filename):
     wallets_with_balance = []
 
     for idx, line in enumerate(lines, 1):
-        eleven_words = line.strip()
+        words_input = line.strip()
 
-        if not eleven_words or eleven_words.startswith('#'):
+        if not words_input or words_input.startswith('#'):
             continue
 
-        word_count = len(eleven_words.split())
-        if word_count != 11:
-            log_print(f"\nLine {idx}: Invalid word count ({word_count}), skipping...")
+        word_count = len(words_input.split())
+        if word_count not in [11, 12]:
+            log_print(f"\nLine {idx}: Invalid word count ({word_count}), expected 11 or 12 words, skipping...")
             continue
 
-        log_print(f"\n[Line {idx}/{total_lines}] Processing: {eleven_words[:50]}...")
+        log_print(f"\n[Line {idx}/{total_lines}] Processing: {words_input[:50]}...")
         log_print("-" * 80)
 
-        # Find valid 12th words
-        valid_seeds = get_valid_12th_words(eleven_words)
-        log_print(f"Found {len(valid_seeds)} valid seed phrase(s)")
+        # Determine if we have 11 or 12 words
+        if word_count == 12:
+            # Validate the 12-word seed
+            mnemo = Mnemonic("english")
+            if mnemo.check(words_input):
+                log_print(f"✅ Valid 12-word seed phrase detected")
+                valid_seeds = [words_input]
+            else:
+                log_print(f"❌ Invalid 12-word seed phrase (checksum failed), skipping...")
+                continue
+        else:
+            # Find valid 12th words from 11 words
+            valid_seeds = get_valid_12th_words(words_input)
+            log_print(f"Found {len(valid_seeds)} valid seed phrase(s)")
 
         for seed_idx, seed in enumerate(valid_seeds, 1):
-            last_word = seed.split()[-1]
-            log_print(f"\n  [{seed_idx}] 12th word: '{last_word}'")
-            log_print(f"  Full seed: {seed}")
+            if word_count == 12:
+                log_print(f"\n  Full seed: {seed}")
+            else:
+                last_word = seed.split()[-1]
+                log_print(f"\n  [{seed_idx}] 12th word: '{last_word}'")
+                log_print(f"  Full seed: {seed}")
 
             # Generate addresses
             addresses = generate_addresses(seed)
@@ -354,8 +368,11 @@ def main():
 
     if len(sys.argv) < 2:
         print("Usage: python3 bitcoin_seed_finder.py <input_file> [output_file]")
-        print("\nInput file format: Each line should contain 11 space-separated BIP39 words")
-        print("Output file: Optional. If not specified, creates results_YYYYMMDD_HHMMSS.txt")
+        print("\nInput file format:")
+        print("  - 11 words: Generates all valid 12th words and checks all resulting wallets")
+        print("  - 12 words: Validates the seed and checks only that specific wallet")
+        print("  - Each line should contain space-separated BIP39 words")
+        print("\nOutput file: Optional. If not specified, creates results_YYYYMMDD_HHMMSS.txt")
         sys.exit(1)
 
     filename = sys.argv[1]
