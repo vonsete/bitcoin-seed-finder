@@ -1,0 +1,32 @@
+# Bitcoin Seed Finder - Example Input File
+#
+# This file demonstrates both supported modes:
+#
+# MODE 1: 11 words - The tool will generate all 128 valid 12th words
+# MODE 2: 12 words - The tool will validate the seed and check only that wallet
+#
+# Lines starting with # are comments and will be ignored
+# Empty lines are also ignored
+
+# ============================================================================
+# MODE 1: 11-word seeds (generates all possible valid 12th words)
+# ============================================================================
+
+# Example: This will generate and check 128 different wallets
+abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon
+
+# ============================================================================
+# MODE 2: 12-word seeds (validates and checks specific wallet)
+# ============================================================================
+
+# Valid 12-word seed - will be processed
+abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
+
+# Invalid 12-word seed - will be rejected (wrong checksum)
+abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon zoo
+
+# ============================================================================
+# You can mix both modes in the same file
+# ============================================================================
+
+# Add your own seeds below (one per line):
