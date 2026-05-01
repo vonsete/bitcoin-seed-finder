@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Bitcoin Wallet Finder from 11-word seeds
-Finds valid 12th words, generates wallets, and checks balances
+Bitcoin Wallet Finder from incomplete seeds
+Supports 11-word seeds (finds 12th word) and 23-word seeds (finds 24th word)
 """
+
+VERSION = "1.5.0"
 
 import sys
 import time
@@ -234,9 +236,51 @@ def check_balance_with_fallback(address):
 
     return None, None, None
 
+def get_valid_24th_words(twenty_three_words):
+    """
+    Given 23 words, calculate all valid 24th words based on BIP39 checksum.
+    24-word seed = 256 bits entropy + 8 bits checksum = 264 bits total.
+    23 words = 253 bits, so the 24th word contributes 3 entropy bits + 8 checksum bits = 8 combinations.
+    """
+    mnemo = Mnemonic("english")
+    wordlist = mnemo.wordlist
+
+    words = twenty_three_words.split()
+    if len(words) != 23:
+        return []
+
+    try:
+        indices = [wordlist.index(w) for w in words]
+    except ValueError:
+        return []
+
+    bits = ""
+    for idx in indices:
+        bits += bin(idx)[2:].zfill(11)
+
+    valid_seeds = []
+
+    # Try all 8 possible values for the last 3 bits of entropy
+    for i in range(8):
+        entropy_bits = bits + bin(i)[2:].zfill(3)
+        entropy_bytes = int(entropy_bits, 2).to_bytes(32, byteorder='big')
+
+        hash_bytes = hashlib.sha256(entropy_bytes).digest()
+        checksum_bits = bin(hash_bytes[0])[2:].zfill(8)
+
+        last_word_bits = bin(i)[2:].zfill(3) + checksum_bits
+        last_word_index = int(last_word_bits, 2)
+        last_word = wordlist[last_word_index]
+
+        seed_phrase = f"{twenty_three_words} {last_word}"
+        valid_seeds.append(seed_phrase)
+
+    return valid_seeds
+
+
 def process_file(filename):
     """
-    Process input file with 11 words per line
+    Process input file: supports 11, 12, 23, or 24 words per line.
     """
     try:
         with open(filename, 'r') as f:
@@ -258,34 +302,40 @@ def process_file(filename):
             continue
 
         word_count = len(words_input.split())
-        if word_count not in [11, 12]:
-            log_print(f"\nLine {idx}: Invalid word count ({word_count}), expected 11 or 12 words, skipping...")
+        if word_count not in [11, 12, 23, 24]:
+            log_print(f"\nLine {idx}: Invalid word count ({word_count}), expected 11, 12, 23 or 24 words, skipping...")
             continue
 
         log_print(f"\n[Line {idx}/{total_lines}] Processing: {words_input[:50]}...")
         log_print("-" * 80)
 
-        # Determine if we have 11 or 12 words
-        if word_count == 12:
-            # Validate the 12-word seed
-            mnemo = Mnemonic("english")
+        mnemo = Mnemonic("english")
+
+        if word_count in [12, 24]:
+            # Validate the complete seed
             if mnemo.check(words_input):
-                log_print(f"✅ Valid 12-word seed phrase detected")
+                log_print(f"✅ Valid {word_count}-word seed phrase detected")
                 valid_seeds = [words_input]
             else:
-                log_print(f"❌ Invalid 12-word seed phrase (checksum failed), skipping...")
+                log_print(f"❌ Invalid {word_count}-word seed phrase (checksum failed), skipping...")
                 continue
-        else:
-            # Find valid 12th words from 11 words
+        elif word_count == 11:
             valid_seeds = get_valid_12th_words(words_input)
-            log_print(f"Found {len(valid_seeds)} valid seed phrase(s)")
+            log_print(f"Found {len(valid_seeds)} valid seed phrase(s) (12-word)")
+        else:  # 23 words
+            valid_seeds = get_valid_24th_words(words_input)
+            log_print(f"Found {len(valid_seeds)} valid seed phrase(s) (24-word)")
 
         for seed_idx, seed in enumerate(valid_seeds, 1):
-            if word_count == 12:
+            if word_count in [12, 24]:
                 log_print(f"\n  Full seed: {seed}")
-            else:
+            elif word_count == 11:
                 last_word = seed.split()[-1]
                 log_print(f"\n  [{seed_idx}] 12th word: '{last_word}'")
+                log_print(f"  Full seed: {seed}")
+            else:
+                last_word = seed.split()[-1]
+                log_print(f"\n  [{seed_idx}] 24th word: '{last_word}'")
                 log_print(f"  Full seed: {seed}")
 
             # Generate addresses
@@ -369,8 +419,10 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python3 bitcoin_seed_finder.py <input_file> [output_file]")
         print("\nInput file format:")
-        print("  - 11 words: Generates all valid 12th words and checks all resulting wallets")
+        print("  - 11 words: Generates all valid 12th words (128 combinations) and checks wallets")
         print("  - 12 words: Validates the seed and checks only that specific wallet")
+        print("  - 23 words: Generates all valid 24th words (8 combinations) and checks wallets")
+        print("  - 24 words: Validates the seed and checks only that specific wallet")
         print("  - Each line should contain space-separated BIP39 words")
         print("\nOutput file: Optional. If not specified, creates results_YYYYMMDD_HHMMSS.txt")
         sys.exit(1)
@@ -393,7 +445,7 @@ def main():
         sys.exit(1)
 
     log_print("=" * 80)
-    log_print("  Bitcoin Wallet Finder from 11-word Seeds")
+    log_print(f"  Bitcoin Wallet Finder from Incomplete Seeds v{VERSION} (11 or 23 words)")
     log_print("=" * 80)
     log_print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log_print("\n⚠️  ETHICAL USE ONLY - For recovering your own lost wallets")
